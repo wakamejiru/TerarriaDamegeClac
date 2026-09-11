@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terraria ダメージ計算機</title>
+  <meta name="description" content="Terrariaの被ダメージ計算、軽減率曲率、防御力相関グラフ、およびアクセサリー5枠の最適リフォージ判定">
+  
+  <!-- Google Fonts & Chart.js -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <h1>Terraria ダメージ計算機</h1>
+        <p class="subtitle">被ダメージ計算・軽減率曲率 ＆ アクセサリー5枠最適リフォージ判定</p>
+      </div>
+
+      <div class="header-right">
+        <label for="selectCalcMode">計算方式:</label>
+        <select id="selectCalcMode" class="form-select">
+          <option value="multiplication" selected>実効乗算方式 (推奨: (Atk-Def) ÷ (1+軽減率))</option>
+          <option value="subtraction">式通り減算方式 ((Atk-Def) - (1-1/(1+軽減率)))</option>
+        </select>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="tab-current" id="btnTabCurrent">
+        <span class="tab-icon">📊</span>
+        <span>タブ1: 現在の状態・ダメージ計算</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-optimizer" id="btnTabOptimizer">
+        <span class="tab-icon">🏆</span>
+        <span>タブ2: リフォージ最適化 (理想の状態)</span>
+      </button>
+    </nav>
+
+    <!-- Tab 1: Current State & Damage Calculation -->
+    <main id="tab-current" class="tab-pane active">
+      <!-- Input Panel (Tab 1) -->
+      <div class="panel-box input-panel">
+        <div class="panel-header">
+          <h2>現在のステータス入力</h2>
+          <span class="badge">ゲーム内の現在の値をそのまま入力</span>
+        </div>
+
+        <div class="inputs-grid">
+          <!-- Attack -->
+          <div class="input-card">
+            <div class="input-row">
+              <label for="inputAtk">予想敵攻撃力</label>
+              <div class="num-wrapper">
+                <input type="number" id="inputAtk" class="num-input" value="1000" min="0" max="5000" step="10">
+                <span class="unit">Atk</span>
+              </div>
+            </div>
+            <input type="range" id="rangeAtk" class="slider" value="1000" min="0" max="3000" step="10">
+          </div>
+
+          <!-- Current Defense -->
+          <div class="input-card">
+            <div class="input-row">
+              <label for="inputDef">現在の防御力 (リフォージ等込み)</label>
+              <div class="num-wrapper">
+                <input type="number" id="inputDef" class="num-input" value="80" min="0" max="300" step="1">
+                <span class="unit">Def</span>
+              </div>
+            </div>
+            <input type="range" id="rangeDef" class="slider" value="80" min="0" max="250" step="1">
+          </div>
+
+          <!-- Current DR -->
+          <div class="input-card">
+            <div class="input-row">
+              <label for="inputDr">現在の軽減率</label>
+              <div class="num-wrapper">
+                <input type="number" id="inputDr" class="num-input" value="10" min="0" max="100" step="0.5">
+                <span class="unit">%</span>
+              </div>
+            </div>
+            <input type="range" id="rangeDr" class="slider" value="10" min="0" max="100" step="0.5">
+          </div>
+        </div>
+
+        <!-- Potions Bar -->
+        <div class="potions-bar">
+          <span class="potions-title">追加ポーション効果:</span>
+          <label class="potion-check-label">
+            <input type="checkbox" id="chkIronskin">
+            <span class="chk-custom"></span>
+            <span>🛡️ 鉄壁のポーション (防御力 +8)</span>
+          </label>
+          <label class="potion-check-label">
+            <input type="checkbox" id="chkEndurance">
+            <span class="chk-custom"></span>
+            <span>🧪 耐久のポーション (軽減率 +10%)</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Damage Result Summary Bar -->
+      <div class="panel-box damage-summary-panel">
+        <div class="summary-item main-damage">
+          <span class="summary-label">最終 被ダメージ</span>
+          <div class="summary-number">
+            <span id="finalDamageVal" class="dmg-val font-num">---</span>
+            <span class="dmg-unit">DMG</span>
+          </div>
+          <span id="damageSubtext" class="subtext">計算中...</span>
+        </div>
+
+        <div class="summary-item">
+          <span class="summary-label">現在の合計ステータス</span>
+          <div class="stat-line">合計防御力: <strong id="totalDefVal" class="font-num">--</strong></div>
+          <div class="stat-line">合計投入軽減率: <strong id="totalDrVal" class="font-num">--%</strong></div>
+        </div>
+
+        <div class="summary-item">
+          <span class="summary-label">実効軽減率 (曲率反映)</span>
+          <div class="stat-line">実効軽減: <strong id="effectiveDrVal" class="font-num text-green">--%</strong></div>
+          <div class="stat-line">実質倍率: <strong id="effectiveMultiplierVal" class="font-num">×--</strong></div>
+        </div>
+      </div>
+
+      <!-- Large Graphs (Bottom) -->
+      <div class="graphs-stack">
+        <!-- Defense vs Damage Chart -->
+        <div class="panel-box graph-box">
+          <div class="graph-header">
+            <h3>📈 防御力 vs 被ダメージ 相関グラフ</h3>
+            <span class="graph-note">現在の立ち位置（★）と防御力増加に伴うダメージ推移</span>
+          </div>
+          <div class="chart-canvas-container large">
+            <canvas id="defenseDamageChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Curvature Chart -->
+        <div class="panel-box graph-box">
+          <div class="graph-header">
+            <h3>🌀 軽減率の曲率 (実質軽減率の推移: 1 - 1/(1+軽減率))</h3>
+            <span class="graph-note">投入軽減率に対する実際の軽減率の逓減カーブ</span>
+          </div>
+          <div class="chart-canvas-container large">
+            <canvas id="curvatureChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Tab 2: Reforge Optimizer (Independent Base Stats) -->
+    <main id="tab-optimizer" class="tab-pane">
+      <!-- Optimizer Input Panel (Tab 2専用: リフォージなし状態を入力) -->
+      <div class="panel-box input-panel">
+        <div class="panel-header">
+          <h2>リフォージなし (素の状態) のステータス入力</h2>
+          <span class="badge" style="color:var(--color-gold); border-color:rgba(227,179,65,0.4);">タブ1とは独立した素ステータス</span>
+        </div>
+
+        <div class="inputs-grid">
+          <!-- Optimizer Attack -->
+          <div class="input-card">
+            <div class="input-row">
+              <label for="optInputAtk">予想敵攻撃力</label>
+              <div class="num-wrapper">
+                <input type="number" id="optInputAtk" class="num-input" value="1000" min="0" max="5000" step="10">
+                <span class="unit">Atk</span>
+              </div>
+            </div>
+            <input type="range" id="optRangeAtk" class="slider" value="1000" min="0" max="3000" step="10">
+          </div>
+
+          <!-- Optimizer Base Defense (リフォージ除外) -->
+          <div class="input-card">
+            <div class="input-row">
+              <label for="optInputDef">素の防御力 (リフォージ除外)</label>
+              <div class="num-wrapper">
+                <input type="number" id="optInputDef" class="num-input" value="60" min="0" max="300" step="1">
+                <span class="unit">Def</span>
+              </div>
+            </div>
+            <input type="range" id="optRangeDef" class="slider" value="60" min="0" max="250" step="1">
+          </div>
+
+          <!-- Optimizer Base DR (リフォージ除外) -->
+          <div class="input-card">
+            <div class="input-row">
+              <label for="optInputDr">素の軽減率 (リフォージ除外)</label>
+              <div class="num-wrapper">
+                <input type="number" id="optInputDr" class="num-input" value="0" min="0" max="100" step="0.5">
+                <span class="unit">%</span>
+              </div>
+            </div>
+            <input type="range" id="optRangeDr" class="slider" value="0" min="0" max="100" step="0.5">
+          </div>
+        </div>
+
+        <!-- Potions Bar for Optimizer -->
+        <div class="potions-bar">
+          <span class="potions-title">ポーション併用想定:</span>
+          <label class="potion-check-label">
+            <input type="checkbox" id="optChkIronskin">
+            <span class="chk-custom"></span>
+            <span>🛡️ 鉄壁のポーション (防御力 +8)</span>
+          </label>
+          <label class="potion-check-label">
+            <input type="checkbox" id="optChkEndurance">
+            <span class="chk-custom"></span>
+            <span>🧪 耐久のポーション (軽減率 +10%)</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Best Combination Box -->
+      <div class="panel-box recommendation-box">
+        <div class="rec-top">
+          <div class="rec-headline">
+            <span class="crown-icon">👑</span>
+            <div>
+              <div class="rec-label">最も被ダメージを抑える 最適リフォージ</div>
+              <div id="bestReforgeBadge" class="rec-badge font-num">計算中...</div>
+            </div>
+          </div>
+          <div class="rec-buttons">
+            <button id="applyBestToTab1Btn" class="btn-primary" style="background:#1f6feb;">
+              🚀 この最適リフォージ結果をタブ1（現在の状態）に反映
+            </button>
+            <button id="applyBestBtn" class="btn-secondary">
+              ⚡ 下の手動枠にセット
+            </button>
+          </div>
+        </div>
+
+        <div class="rec-body">
+          <div class="rec-stat-col">
+            <span class="sub-label">リフォージなし時の被ダメ:</span>
+            <span id="baselineDamageVal" class="font-num" style="font-size:1.2rem; color:var(--text-sub);">---</span>
+          </div>
+          <div class="rec-stat-col">
+            <span class="sub-label">最適リフォージ時の被ダメ:</span>
+            <span id="bestDamageVal" class="best-dmg font-num">---</span>
+          </div>
+          <div class="rec-stat-col">
+            <span class="sub-label">リフォージによる軽減量:</span>
+            <div id="bestDiffVal" class="font-num">---</div>
+          </div>
+          <div id="bestReforgeDetails" class="rec-stat-row"></div>
+        </div>
+      </div>
+
+      <!-- 3 Specialized Styles Compare -->
+      <div class="panel-box">
+        <div class="panel-header">
+          <h2>特化スタイル比較 (5枠すべて同種にした場合)</h2>
+        </div>
+        <div id="specializedCompare" class="spec-grid"></div>
+      </div>
+
+      <!-- Manual 5-Slots Configuration -->
+      <div class="panel-box">
+        <div class="panel-header">
+          <h2>アクセサリー5枠の手動シミュレーション</h2>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <span class="badge">各枠を個別に変更して試せます</span>
+            <button id="applyManualToTab1Btn" class="btn-secondary" style="font-size:0.75rem; padding:3px 8px;">
+              この手動構成をタブ1に反映
+            </button>
+          </div>
+        </div>
+        <div id="accessorySlotsContainer" class="slots-horizontal"></div>
+        <div id="manualSlotSummary" class="manual-summary-bar"></div>
+      </div>
+
+      <!-- Ranking Top Table -->
+      <div class="panel-box">
+        <div class="panel-header">
+          <h2>リフォージ組み合わせ ランキング TOP 5</h2>
+          <span class="badge">全21パターン総当たり評価</span>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>順位</th>
+                <th>組み合わせ</th>
+                <th>総合防御</th>
+                <th>投入軽減率</th>
+                <th>被ダメージ</th>
+                <th>素の状態からの削減量</th>
+              </tr>
+            </thead>
+            <tbody id="rankingTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <!-- Notification Toast -->
+    <div id="toastNotification" class="toast-msg"></div>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>Terraria Damage Calculator | Vanilla JS & Chart.js</p>
+    </footer>
+  </div>
+
+  <script src="js/calculator.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

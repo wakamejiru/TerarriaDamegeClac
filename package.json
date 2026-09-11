@@ -1,0 +1,13 @@
+{
+  "name": "terraria-damage-calc",
+  "version": "1.0.0",
+  "description": "Terraria Damage & Damage Reduction Calculator with Reforge Optimizer",
+  "main": "index.html",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["terraria", "damage-calculator", "optimization"],
+  "author": "",
+  "license": "MIT"
+}
